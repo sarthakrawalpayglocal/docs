@@ -1,0 +1,78 @@
+---
+title: "PayGlocal REST API: Endpoints and Conventions"
+description: "Explore the PayGlocal REST API for accepting global payments, managing refunds, and receiving real-time webhook notifications in your application."
+---
+
+The PayGlocal API is a REST-based interface that lets you initiate payments, check transaction statuses, process refunds, and receive real-time event notifications via webhooks. All requests are made over HTTPS, and all request and response bodies use JSON. This reference covers every endpoint available in the `/gl/v1/` API version, along with authentication, error handling, and rate limit details.
+
+## Base URLs
+
+Use the sandbox environment to build and test your integration without processing real transactions. Switch to the production URL only when you are ready to go live.
+
+| Environment | Base URL                          |
+| ----------- | --------------------------------- |
+| Sandbox     | `https://api.sandbox.payglocal.in` |
+| Production  | `https://api.payglocal.in`        |
+
+All endpoint paths are prefixed with `/gl/v1/`. For example, the full URL to initiate a payment in sandbox is:
+
+```
+https://api.sandbox.payglocal.in/gl/v1/payments/initiate
+```
+
+## API versioning
+
+The current API version is `v1`, reflected in every path under `/gl/v1/`. When breaking changes are introduced, a new version path (e.g., `/gl/v2/`) will be released. The previous version remains available for a deprecation period communicated in advance. Non-breaking additions such as new optional fields or new event types may be added to the current version at any time without a version bump.
+
+## Request format
+
+Every request that includes a body must set the `Content-Type` header to `application/json` and send a valid JSON payload. All monetary amounts are represented as strings with two decimal places (for example, `"1500.00"`) to avoid floating-point precision issues.
+
+```
+Content-Type: application/json
+Authorization: Bearer {API_KEY}
+```
+
+## Response format
+
+All responses return a JSON body with an HTTP status code. Successful responses use `2xx` status codes. The top-level `status` field in the response body is `"SUCCESS"` for successful operations and `"FAILURE"` for business-logic failures (which may still return `200`). Network and server errors return standard `4xx` or `5xx` HTTP codes.
+
+```json
+{
+  "status": "SUCCESS",
+  "ygTransactionId": "YG_TXN_20240115_XYZ789",
+  "merchantTxnId": "ORD_20240115_001"
+}
+```
+
+## Rate limits
+
+The default rate limit is **100 requests per minute** per API key. If you exceed this limit, the API returns a `429 Too Many Requests` response. Contact PayGlocal support if your integration requires a higher limit.
+
+<Note>
+Rate limit headers (`X-RateLimit-Limit`, `X-RateLimit-Remaining`, `X-RateLimit-Reset`) are included in every response so you can track your usage programmatically.
+</Note>
+
+## Endpoint index
+
+The table below lists every endpoint available in the PayGlocal API.
+
+| Method | Path                                        | Description                              |
+| ------ | ------------------------------------------- | ---------------------------------------- |
+| POST   | `/gl/v1/payments/initiate`                  | Create and initiate a new payment        |
+| GET    | `/gl/v1/payments/{ygTransactionId}/status`  | Retrieve the status of a payment         |
+| POST   | `/gl/v1/payments/{ygTransactionId}/cancel`  | Cancel an in-progress payment            |
+| POST   | `/gl/v1/refunds`                            | Create a refund for a completed payment  |
+| GET    | `/gl/v1/refunds/{refundId}`                 | Retrieve the status of a refund          |
+
+## Error codes
+
+| HTTP Status | Meaning                                                          |
+| ----------- | ---------------------------------------------------------------- |
+| `400`       | Bad request — missing or invalid fields in the request body      |
+| `401`       | Unauthorized — missing or invalid API key                        |
+| `403`       | Forbidden — the API key does not have permission for this action |
+| `404`       | Not found — the resource ID does not exist                       |
+| `409`       | Conflict — idempotency key already used with different params    |
+| `429`       | Too many requests — rate limit exceeded                          |
+| `500`       | Internal server error — contact PayGlocal support                |

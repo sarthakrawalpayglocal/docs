@@ -1,0 +1,109 @@
+---
+title: "Test Your PayGlocal Integration Before Go-Live"
+description: "Use the PayGlocal sandbox environment to test payments, refunds, and webhooks with test credentials before going live in production."
+---
+
+Before going live, you should thoroughly test your integration against the PayGlocal sandbox environment. The sandbox behaves identically to production but processes no real money. This guide covers how to access the sandbox, which test values to use, and what to verify before switching to production credentials.
+
+## Sandbox environment
+
+The sandbox base URL is:
+
+```
+https://api.sandbox.payglocal.in
+```
+
+Replace `api.payglocal.in` with `api.sandbox.payglocal.in` in all your API calls during testing. Sandbox credentials are separate from production credentials — do not mix them.
+
+<Note>
+  Obtain your sandbox API key from the **Sandbox** section of the PayGlocal dashboard. Your production API key will not authenticate against the sandbox, and vice versa.
+</Note>
+
+## Test card numbers
+
+Use these card numbers on the sandbox checkout page to simulate different payment outcomes. Use any future expiry date (e.g., `12/26`) and any 3-digit CVV.
+
+| Card number | Network | Scenario |
+|---|---|---|
+| `4111 1111 1111 1111` | Visa | Successful payment |
+| `5500 0000 0000 0004` | Mastercard | Successful payment |
+| `4000 0000 0000 0002` | Visa | Payment declined |
+| `4000 0000 0000 9995` | Visa | Insufficient funds |
+
+## Test UPI IDs
+
+For UPI payment testing, use these IDs at the sandbox checkout:
+
+| UPI ID | Scenario |
+|---|---|
+| `success@payglocal` | Successful UPI payment |
+| `failure@payglocal` | Failed UPI payment |
+
+## Webhook testing
+
+The sandbox sends real webhook POST requests to your registered endpoint, just as production does. To receive webhooks during local development, expose your local server using a tunneling tool such as [ngrok](https://ngrok.com) or [Cloudflare Tunnel](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/), then register the public URL in the PayGlocal dashboard under **Sandbox > Webhooks**.
+
+<Tip>
+  Log the full raw body of incoming webhooks during development. This makes it easier to inspect the payload structure and debug signature verification before you harden your handler.
+</Tip>
+
+## Example: Running a test payment
+
+The following request targets the sandbox endpoint and uses a test `merchantTxnId`:
+
+```bash curl
+curl -X POST https://api.sandbox.payglocal.in/gl/v1/payments/initiate \
+  -H "Authorization: Bearer YOUR_SANDBOX_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "merchantId": "MERCH_TEST_001",
+    "merchantTxnId": "TEST_ORD_001",
+    "merchantUniqueId": "test-unique-001",
+    "paymentData": {
+      "totalAmount": "100.00",
+      "txnCurrency": "INR",
+      "billingData": {
+        "firstName": "Test",
+        "lastName": "User",
+        "emailId": "test@example.com",
+        "phoneNumber": "9000000000",
+        "addressStreet1": "1 Test Lane",
+        "city": "Mumbai",
+        "state": "MH",
+        "country": "IN",
+        "postalCode": "400001"
+      }
+    },
+    "pgData": {
+      "returnUrl": "https://your-dev-server.example.com/return"
+    }
+  }'
+```
+
+Redirect to the returned `redirectUrl`, complete checkout using a test card, and then verify the status using `GET /gl/v1/payments/{ygTransactionId}/status`.
+
+## Pre-launch checklist
+
+Work through the following before switching to your production API key:
+
+<Steps>
+  <Step title="Verify the successful payment flow">
+    Complete an end-to-end payment using a success test card. Confirm that your return URL receives the `ygTransactionId`, your server fetches the status, and the order is fulfilled only when `status` is `SUCCESS`.
+  </Step>
+  <Step title="Verify failed payment handling">
+    Use the declined and insufficient funds test cards. Confirm that your application handles these gracefully — showing an appropriate message to the customer and not marking the order as paid.
+  </Step>
+  <Step title="Verify webhook receipt and signature verification">
+    Confirm your webhook endpoint receives events and responds with HTTP 200. If PayGlocal provides a webhook signature header, verify it to protect against spoofed requests.
+  </Step>
+  <Step title="Verify the refund flow">
+    Issue a full and a partial refund against a successful sandbox transaction. Confirm that refund status updates are handled correctly in your system.
+  </Step>
+  <Step title="Switch to your production API key">
+    Update your environment configuration to use `https://api.payglocal.in` and your production API key. Double-check that no sandbox credentials or test card numbers remain in your production configuration.
+  </Step>
+</Steps>
+
+<Warning>
+  Never log or store your production API key in source control. Use environment variables or a secrets manager to inject credentials at runtime.
+</Warning>

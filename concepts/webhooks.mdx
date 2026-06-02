@@ -1,0 +1,193 @@
+---
+title: "PayGlocal Webhooks: Events, Delivery & Retries"
+description: "Learn how PayGlocal webhooks work, what events are delivered, how to verify signatures, and how to acknowledge delivery reliably in your integration."
+---
+
+Webhooks let PayGlocal notify your server the moment a payment status changes, without you having to poll for updates. When an event occurs — such as a payment succeeding or a refund completing — PayGlocal sends an HTTP POST request to a URL you register. Your server processes the event and responds with a `200 OK` to acknowledge receipt. This is the most reliable way to keep your system in sync with the real-time state of transactions.
+
+## Webhooks vs polling
+
+You could call `GET /gl/v1/payments/{ygTransactionId}/status` repeatedly to check for updates, but polling has drawbacks: it wastes API quota, adds latency, and is harder to scale. Webhooks push the update to you instantly, reducing the time between a payment completing and your system acting on it.
+
+<Tip>
+  Use webhooks as your primary mechanism for reacting to payment events. Reserve status polling for cases where you need to confirm state synchronously — for example, after a customer returns to your site from a redirect.
+</Tip>
+
+## Registering your webhook URL
+
+You register webhook endpoints through the PayGlocal dashboard.
+
+<Steps>
+  <Step title="Open Webhook Settings">
+    In the PayGlocal dashboard, navigate to **Settings → Webhooks**. Sandbox and production environments have separate webhook configurations.
+  </Step>
+  <Step title="Add your endpoint URL">
+    Enter the full HTTPS URL of the endpoint on your server that will receive events (e.g., `https://yourapp.com/webhooks/payglocal`). PayGlocal only delivers to HTTPS endpoints.
+  </Step>
+  <Step title="Select events">
+    Choose which event types to subscribe to. You can subscribe to all events or limit delivery to specific types.
+  </Step>
+  <Step title="Save and copy the secret">
+    After saving, PayGlocal generates a webhook signing secret for your endpoint. Copy it and store it securely — you'll use it to verify incoming webhook signatures.
+  </Step>
+</Steps>
+
+## Event types
+
+| Event | Triggered when |
+|---|---|
+| `PAYMENT_SUCCESS` | A payment reaches `SUCCESS` status — funds have been captured. |
+| `PAYMENT_FAILED` | A payment reaches `FAILED` status — the transaction was declined or errored. |
+| `PAYMENT_CANCELLED` | A payment reaches `CANCELLED` status — cancelled by the customer or via the API. |
+| `REFUND_PROCESSED` | A refund has been successfully processed. |
+
+## Webhook payload structure
+
+Every webhook delivery is an HTTP POST request with a JSON body and a signature header.
+
+```json
+{
+  "event": "PAYMENT_SUCCESS",
+  "paymentId": "YG-2024-0001234567",
+  "merchantTxnId": "order_abc123",
+  "status": "SUCCESS",
+  "amount": 149900,
+  "currency": "INR",
+  "timestamp": "2024-06-01T10:01:45Z",
+  "signature": "sha256=3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d0e1f2a3b4"
+}
+```
+
+| Field | Type | Description |
+|---|---|---|
+| `event` | string | The event type (e.g., `PAYMENT_SUCCESS`). |
+| `paymentId` | string | PayGlocal's unique transaction ID (`ygTransactionId`). |
+| `merchantTxnId` | string | Your transaction ID as supplied at initiation. |
+| `status` | string | The new payment status. |
+| `amount` | number | Transaction amount in the smallest currency unit. |
+| `currency` | string | ISO 4217 currency code. |
+| `timestamp` | string | ISO 8601 timestamp of when the event occurred. |
+| `signature` | string | HMAC-SHA256 signature for verifying authenticity. |
+
+## Verifying webhook signatures
+
+Every webhook request includes a `X-PayGlocal-Signature` header containing an HMAC-SHA256 signature. Always verify this signature before processing the event — it proves the request genuinely came from PayGlocal and has not been tampered with.
+
+The signature is computed as:
+
+```
+HMAC-SHA256(secret, raw_request_body)
+```
+
+Where `secret` is the signing secret from your dashboard and `raw_request_body` is the exact byte string of the POST body.
+
+<Warning>
+  Use the raw request body when computing the signature — do not parse it to JSON first. Parsing and re-serializing JSON can change whitespace and key ordering, causing the signature check to fail even for legitimate events.
+</Warning>
+
+<CodeGroup>
+
+```javascript Node.js
+const crypto = require('crypto');
+
+function verifyWebhookSignature(rawBody, signatureHeader, secret) {
+  const expectedSignature = 'sha256=' + crypto
+    .createHmac('sha256', secret)
+    .update(rawBody)
+    .digest('hex');
+
+  // Use timingSafeEqual to prevent timing attacks
+  const sigBuffer = Buffer.from(signatureHeader);
+  const expectedBuffer = Buffer.from(expectedSignature);
+
+  if (sigBuffer.length !== expectedBuffer.length) {
+    return false;
+  }
+
+  return crypto.timingSafeEqual(sigBuffer, expectedBuffer);
+}
+
+// Express example — ensure bodyParser reads the raw body
+app.post('/webhooks/payglocal', express.raw({ type: 'application/json' }), (req, res) => {
+  const signature = req.headers['x-payglocal-signature'];
+  const secret = process.env.PAYGLOCAL_WEBHOOK_SECRET;
+
+  if (!verifyWebhookSignature(req.body, signature, secret)) {
+    return res.status(401).send('Invalid signature');
+  }
+
+  const event = JSON.parse(req.body);
+  console.log('Received event:', event.event, event.paymentId);
+
+  // Process the event here...
+
+  res.status(200).send('OK');
+});
+```
+
+```python Python
+import hmac
+import hashlib
+import os
+from flask import Flask, request, abort
+
+app = Flask(__name__)
+
+def verify_webhook_signature(raw_body: bytes, signature_header: str, secret: str) -> bool:
+    expected = 'sha256=' + hmac.new(
+        secret.encode('utf-8'),
+        raw_body,
+        hashlib.sha256
+    ).hexdigest()
+
+    # Use compare_digest to prevent timing attacks
+    return hmac.compare_digest(signature_header, expected)
+
+@app.route('/webhooks/payglocal', methods=['POST'])
+def handle_webhook():
+    raw_body = request.get_data()
+    signature = request.headers.get('X-PayGlocal-Signature', '')
+    secret = os.environ['PAYGLOCAL_WEBHOOK_SECRET']
+
+    if not verify_webhook_signature(raw_body, signature, secret):
+        abort(401)
+
+    event = request.get_json()
+    print(f"Received event: {event['event']} {event['paymentId']}")
+
+    # Process the event here...
+
+    return 'OK', 200
+```
+
+</CodeGroup>
+
+## Acknowledging delivery
+
+Respond with an HTTP `200` status code as quickly as possible after receiving a webhook. PayGlocal considers any response outside the `2xx` range — or no response within the timeout window — as a failed delivery and will retry.
+
+<Tip>
+  If your event processing is slow (for example, it involves database writes or third-party API calls), acknowledge the webhook immediately and process the event asynchronously in a background job. This prevents accidental retries caused by processing timeouts.
+</Tip>
+
+## Retry policy
+
+If your endpoint fails to respond with a `2xx` status or times out, PayGlocal retries delivery up to **3 times** using exponential backoff:
+
+| Attempt | Delay after previous attempt |
+|---|---|
+| 1st retry | 1 minute |
+| 2nd retry | 5 minutes |
+| 3rd retry | 30 minutes |
+
+After 3 failed retries, PayGlocal stops attempting delivery for that event. You can still retrieve the payment's final status at any time using `GET /gl/v1/payments/{ygTransactionId}/status`.
+
+<Note>
+  Design your webhook handler to be idempotent. Due to retries and rare network conditions, you may receive the same event more than once. Use the `paymentId` (or a combination of `paymentId` + `event`) as a deduplication key before applying state changes to your system.
+</Note>
+
+## Testing webhooks
+
+Use the sandbox environment to test your webhook handler end-to-end before going live. Initiate test payments in the sandbox and verify that your endpoint receives events, validates signatures, and responds correctly.
+
+During local development, tools like [ngrok](https://ngrok.com) or [localtunnel](https://localtunnel.github.io/www/) can expose your local server to the internet so PayGlocal can reach it.

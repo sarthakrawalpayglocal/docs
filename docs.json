@@ -1,0 +1,84 @@
+{
+  "$schema": "https://mintlify.com/docs.json",
+  "theme": "luma",
+  "name": "PayGlocal",
+  "favicon": "https://media.brand.dev/1ceac4bf-1671-45ce-ba5f-dd9b8c9d85c2.png",
+  "colors": {
+    "primary": "#4174df"
+  },
+  "navbar": {
+    "primary": {
+      "type": "github",
+      "href": "https://github.com/payglocal"
+    }
+  },
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": [
+              "introduction",
+              "quickstart",
+              "authentication"
+            ]
+          },
+          {
+            "group": "Core Concepts",
+            "pages": [
+              "concepts/payments",
+              "concepts/payment-methods",
+              "concepts/webhooks",
+              "concepts/errors"
+            ]
+          },
+          {
+            "group": "Guides",
+            "pages": [
+              "guides/accept-payments",
+              "guides/refunds",
+              "guides/recurring-payments",
+              "guides/testing"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "groups": [
+          {
+            "group": "Overview",
+            "pages": [
+              "api-reference/overview",
+              "api-reference/authentication"
+            ]
+          },
+          {
+            "group": "Payments",
+            "pages": [
+              "api-reference/payments/initiate",
+              "api-reference/payments/status",
+              "api-reference/payments/cancel"
+            ]
+          },
+          {
+            "group": "Refunds",
+            "pages": [
+              "api-reference/refunds/create",
+              "api-reference/refunds/status"
+            ]
+          },
+          {
+            "group": "Webhooks",
+            "pages": [
+              "api-reference/webhooks/events",
+              "api-reference/webhooks/verification"
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

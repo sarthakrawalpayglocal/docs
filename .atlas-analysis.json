@@ -1,0 +1,96 @@
+{
+  "projectType": "api-service",
+  "projectName": "PayGlocal",
+  "projectDescription": "PayGlocal is a global payment gateway that enables merchants to accept cross-border and domestic payments through a simple API integration.",
+  "theme": "luma",
+  "primaryColor": "#4174df",
+  "lightColor": null,
+  "darkColor": null,
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": [
+              "introduction",
+              "quickstart",
+              "authentication"
+            ]
+          },
+          {
+            "group": "Core Concepts",
+            "pages": [
+              "concepts/payments",
+              "concepts/payment-methods",
+              "concepts/webhooks",
+              "concepts/errors"
+            ]
+          },
+          {
+            "group": "Guides",
+            "pages": [
+              "guides/accept-payments",
+              "guides/refunds",
+              "guides/recurring-payments",
+              "guides/testing"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "groups": [
+          {
+            "group": "Overview",
+            "pages": [
+              "api-reference/overview",
+              "api-reference/authentication"
+            ]
+          },
+          {
+            "group": "Payments",
+            "pages": [
+              "api-reference/payments/initiate",
+              "api-reference/payments/status",
+              "api-reference/payments/cancel"
+            ]
+          },
+          {
+            "group": "Refunds",
+            "pages": [
+              "api-reference/refunds/create",
+              "api-reference/refunds/status"
+            ]
+          },
+          {
+            "group": "Webhooks",
+            "pages": [
+              "api-reference/webhooks/events",
+              "api-reference/webhooks/verification"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "Cross-border payment acceptance",
+    "Multiple payment method support",
+    "Real-time payment status tracking",
+    "Webhook notifications",
+    "Refund management",
+    "Secure API authentication",
+    "Test and production environments",
+    "Recurring/subscription payments"
+  ],
+  "publicApiSurface": [
+    "POST /payments — Initiate a new payment",
+    "GET /payments/{id} — Get payment status",
+    "POST /payments/{id}/cancel — Cancel a payment",
+    "POST /refunds — Create a refund",
+    "GET /refunds/{id} — Get refund status",
+    "Webhook events: payment.success, payment.failed, refund.processed"
+  ]
+}

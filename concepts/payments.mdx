@@ -1,0 +1,119 @@
+---
+title: "How PayGlocal Payments Work: Lifecycle Guide"
+description: "Understand the PayGlocal payment lifecycle, from initiation through confirmation, and learn how payment objects track state across your integration."
+---
+
+Every payment you process through PayGlocal follows a predictable lifecycle. When you initiate a payment, PayGlocal creates a payment object and redirects your customer to a hosted payment page. Once the customer completes payment, PayGlocal redirects them back to your application and delivers a webhook with the final status. Understanding this flow helps you build a reliable integration that handles every outcome gracefully.
+
+## The payment lifecycle
+
+A payment moves through a defined sequence of statuses from the moment you create it until it reaches a terminal state.
+
+<Steps>
+  <Step title="Initiate the payment">
+    Your server calls `POST /gl/v1/payments/initiate` with the transaction amount, currency, and a unique `merchantTxnId`. PayGlocal creates a payment object with status `INITIATED` and returns a redirect URL.
+  </Step>
+  <Step title="Redirect the customer">
+    You redirect the customer's browser to the URL returned in the initiation response. PayGlocal hosts the payment page — the customer selects their payment method and completes the transaction.
+  </Step>
+  <Step title="Payment processing">
+    While the customer's bank or payment provider processes the transaction, the payment status moves to `PENDING`. This may take a few seconds or longer depending on the payment method.
+  </Step>
+  <Step title="Terminal status reached">
+    The payment settles into one of three terminal statuses: `SUCCESS`, `FAILED`, or `CANCELLED`. At this point, PayGlocal sends a webhook to your registered endpoint and redirects the customer to your return URL.
+  </Step>
+  <Step title="Confirm with your server">
+    When the customer lands on your return URL, call `GET /gl/v1/payments/{ygTransactionId}/status` to verify the final status server-side before fulfilling the order. Never rely solely on query parameters from the redirect.
+  </Step>
+</Steps>
+
+## Payment statuses
+
+| Status | Description |
+|---|---|
+| `INITIATED` | Payment object created, customer has not yet reached the payment page. |
+| `PENDING` | Customer is on the payment page or the transaction is being processed by the bank. |
+| `SUCCESS` | Payment completed and funds captured. |
+| `FAILED` | Payment was declined or an error occurred during processing. |
+| `CANCELLED` | Payment was cancelled — either by the customer or via the cancel endpoint. |
+| `REFUNDED` | A full or partial refund has been processed. |
+
+<Note>
+  A payment in `PENDING` status may remain there for several minutes for certain payment methods such as Net Banking or UPI. Always use webhooks or status polling to determine the final outcome rather than assuming success after the redirect.
+</Note>
+
+## The payment object
+
+When you create or retrieve a payment, PayGlocal returns a payment object with the following fields:
+
+| Field | Type | Description |
+|---|---|---|
+| `ygTransactionId` | string | PayGlocal's unique identifier for the transaction. Use this for status checks, cancellations, and support queries. |
+| `merchantTxnId` | string | The identifier you supplied when initiating the payment. Must be unique per transaction in your system. |
+| `amount` | number | The transaction amount in the smallest currency unit (e.g., paise for INR, cents for USD). |
+| `currency` | string | ISO 4217 currency code (e.g., `INR`, `USD`, `GBP`). |
+| `status` | string | Current payment status. See the status table above. |
+| `paymentMethod` | string | The payment method used (e.g., `CARD`, `UPI`, `NETBANKING`). |
+| `createdAt` | string | ISO 8601 timestamp of when the payment was created. |
+| `updatedAt` | string | ISO 8601 timestamp of the most recent status change. |
+
+### Example payment object
+
+```json
+{
+  "ygTransactionId": "YG-2024-0001234567",
+  "merchantTxnId": "order_abc123",
+  "amount": 149900,
+  "currency": "INR",
+  "status": "SUCCESS",
+  "paymentMethod": "CARD",
+  "createdAt": "2024-06-01T10:00:00Z",
+  "updatedAt": "2024-06-01T10:01:45Z"
+}
+```
+
+## Checking payment status
+
+You can retrieve the current state of any payment using its `ygTransactionId`:
+
+```http
+GET /gl/v1/payments/{ygTransactionId}/status
+Authorization: Bearer YOUR_API_KEY
+```
+
+<Tip>
+  Verify the payment status server-side after every redirect. The customer's browser could navigate away, close, or be manipulated — your backend confirmation is the only source of truth.
+</Tip>
+
+## Cancelling a payment
+
+A payment can be cancelled while it is in `INITIATED` or `PENDING` status. Once a payment reaches `SUCCESS` or `FAILED`, it cannot be cancelled — use the refunds API instead.
+
+```http
+POST /gl/v1/payments/{ygTransactionId}/cancel
+Authorization: Bearer YOUR_API_KEY
+```
+
+## Idempotency and the merchantTxnId
+
+The `merchantTxnId` you supply at initiation is your idempotency key. PayGlocal uses it to detect duplicate requests and will reject a second initiation attempt that reuses an existing `merchantTxnId` with a `409 Conflict` response.
+
+<Warning>
+  Generate a new, unique `merchantTxnId` for every payment attempt — including retries after a failure. Reusing an ID from a failed payment will result in a conflict error and block the new transaction.
+</Warning>
+
+A good `merchantTxnId` combines a stable order identifier with a unique attempt counter or timestamp:
+
+```
+order_abc123_attempt_1
+order_abc123_20240601T100000Z
+```
+
+## Environments
+
+Use the sandbox environment during development to test without moving real money. Sandbox and production share the same API shape.
+
+| Environment | Base URL |
+|---|---|
+| Sandbox | `https://api.sandbox.payglocal.in/gl/v1/` |
+| Production | `https://api.payglocal.in/gl/v1/` |

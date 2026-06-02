@@ -1,0 +1,246 @@
+---
+title: "PayGlocal Quickstart: Make Your First API Call"
+description: "Make your first PayGlocal API call in minutes. This guide walks you from getting API credentials to initiating a payment and checking its status."
+---
+
+This guide takes you through the minimum steps needed to initiate a payment and verify its status using the PayGlocal API. By the end, you'll have made a real API call against the sandbox and received a payment response you can inspect and build on.
+
+<Steps>
+  <Step title="Get your API credentials">
+    Log in to the [PayGlocal merchant dashboard](https://dashboard.payglocal.in) and navigate to **Settings → API Keys**. You'll find separate key pairs for sandbox and production.
+
+    Copy your sandbox secret key — it looks like this:
+
+    ```
+    sk_test_4eC39HqLyjWDarjtT7fin9oLpjD2HFmD
+    ```
+
+    <Tip>
+      Keep your secret key out of your source code. Store it in an environment variable such as `PAYGLOCAL_API_KEY` and read it at runtime.
+    </Tip>
+
+    You'll also need your **Merchant ID**, visible in the dashboard under **Settings → Account**. It follows the format `MERCH_XXXXXX`.
+  </Step>
+
+  <Step title="Initiate a test payment">
+    Send a `POST` request to `/gl/v1/payments/initiate` with your order details. The API returns a `redirectUrl` that you forward your customer to in order to complete payment.
+
+    <CodeGroup>
+
+    ```bash cURL
+    curl --request POST \
+      --url https://api.sandbox.payglocal.in/gl/v1/payments/initiate \
+      --header 'Authorization: Bearer sk_test_4eC39HqLyjWDarjtT7fin9oLpjD2HFmD' \
+      --header 'Content-Type: application/json' \
+      --data '{
+        "merchantId": "MERCH_001",
+        "merchantTxnId": "ORD_20240115_001",
+        "merchantUniqueId": "unique-id-12345",
+        "paymentData": {
+          "totalAmount": "1000.00",
+          "txnCurrency": "INR",
+          "billingData": {
+            "firstName": "John",
+            "lastName": "Doe",
+            "addressStreet1": "123 Main St",
+            "city": "Mumbai",
+            "state": "MH",
+            "country": "IN",
+            "postalCode": "400001",
+            "emailId": "john.doe@example.com"
+          }
+        },
+        "pgData": {
+          "returnUrl": "https://yoursite.com/payment/return"
+        }
+      }'
+    ```
+
+    ```javascript JavaScript
+    const response = await fetch(
+      'https://api.sandbox.payglocal.in/gl/v1/payments/initiate',
+      {
+        method: 'POST',
+        headers: {
+          'Authorization': 'Bearer sk_test_4eC39HqLyjWDarjtT7fin9oLpjD2HFmD',
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          merchantId: 'MERCH_001',
+          merchantTxnId: 'ORD_20240115_001',
+          merchantUniqueId: 'unique-id-12345',
+          paymentData: {
+            totalAmount: '1000.00',
+            txnCurrency: 'INR',
+            billingData: {
+              firstName: 'John',
+              lastName: 'Doe',
+              addressStreet1: '123 Main St',
+              city: 'Mumbai',
+              state: 'MH',
+              country: 'IN',
+              postalCode: '400001',
+              emailId: 'john.doe@example.com',
+            },
+          },
+          pgData: {
+            returnUrl: 'https://yoursite.com/payment/return',
+          },
+        }),
+      }
+    );
+
+    const payment = await response.json();
+    console.log(payment.redirectUrl);
+    ```
+
+    ```python Python
+    import requests
+
+    response = requests.post(
+        "https://api.sandbox.payglocal.in/gl/v1/payments/initiate",
+        headers={
+            "Authorization": "Bearer sk_test_4eC39HqLyjWDarjtT7fin9oLpjD2HFmD",
+            "Content-Type": "application/json",
+        },
+        json={
+            "merchantId": "MERCH_001",
+            "merchantTxnId": "ORD_20240115_001",
+            "merchantUniqueId": "unique-id-12345",
+            "paymentData": {
+                "totalAmount": "1000.00",
+                "txnCurrency": "INR",
+                "billingData": {
+                    "firstName": "John",
+                    "lastName": "Doe",
+                    "addressStreet1": "123 Main St",
+                    "city": "Mumbai",
+                    "state": "MH",
+                    "country": "IN",
+                    "postalCode": "400001",
+                    "emailId": "john.doe@example.com",
+                },
+            },
+            "pgData": {
+                "returnUrl": "https://yoursite.com/payment/return",
+            },
+        },
+    )
+
+    payment = response.json()
+    print(payment["redirectUrl"])
+    ```
+
+    </CodeGroup>
+
+    A successful response returns HTTP `200` with the following body:
+
+    ```json Response
+    {
+      "status": "SUCCESS",
+      "message": "Payment initiated successfully",
+      "data": {
+        "paymentId": "PG_PAY_20240115_7f3a9b2c",
+        "merchantTxnId": "ORD_20240115_001",
+        "merchantUniqueId": "unique-id-12345",
+        "status": "INITIATED",
+        "redirectUrl": "https://checkout.sandbox.payglocal.in/pay/PG_PAY_20240115_7f3a9b2c",
+        "amount": "1000.00",
+        "currency": "INR",
+        "createdAt": "2024-01-15T10:30:00Z"
+      }
+    }
+    ```
+
+    Redirect your customer to `data.redirectUrl` to complete the payment. Store `data.paymentId` — you'll need it to check status.
+  </Step>
+
+  <Step title="Check payment status">
+    After the customer completes (or abandons) the payment flow, PayGlocal redirects them to your `returnUrl`. At that point, call the status endpoint to get the current state of the payment.
+
+    <CodeGroup>
+
+    ```bash cURL
+    curl --request GET \
+      --url https://api.sandbox.payglocal.in/gl/v1/payments/PG_PAY_20240115_7f3a9b2c/status \
+      --header 'Authorization: Bearer sk_test_4eC39HqLyjWDarjtT7fin9oLpjD2HFmD'
+    ```
+
+    ```javascript JavaScript
+    const paymentId = 'PG_PAY_20240115_7f3a9b2c';
+
+    const response = await fetch(
+      `https://api.sandbox.payglocal.in/gl/v1/payments/${paymentId}/status`,
+      {
+        headers: {
+          Authorization: 'Bearer sk_test_4eC39HqLyjWDarjtT7fin9oLpjD2HFmD',
+        },
+      }
+    );
+
+    const result = await response.json();
+    console.log(result.data.status);
+    ```
+
+    ```python Python
+    import requests
+
+    payment_id = "PG_PAY_20240115_7f3a9b2c"
+
+    response = requests.get(
+        f"https://api.sandbox.payglocal.in/gl/v1/payments/{payment_id}/status",
+        headers={
+            "Authorization": "Bearer sk_test_4eC39HqLyjWDarjtT7fin9oLpjD2HFmD",
+        },
+    )
+
+    result = response.json()
+    print(result["data"]["status"])
+    ```
+
+    </CodeGroup>
+
+    The response includes the current payment status:
+
+    ```json Response
+    {
+      "status": "SUCCESS",
+      "data": {
+        "paymentId": "PG_PAY_20240115_7f3a9b2c",
+        "merchantTxnId": "ORD_20240115_001",
+        "status": "PAID",
+        "amount": "1000.00",
+        "currency": "INR",
+        "paymentMethod": "UPI",
+        "paidAt": "2024-01-15T10:33:47Z"
+      }
+    }
+    ```
+  </Step>
+
+  <Step title="Handle the response">
+    Use the `data.status` field to determine the outcome and take action in your system:
+
+    | Status | Meaning | Action |
+    |---|---|---|
+    | `INITIATED` | Payment created, customer not yet redirected | Wait for customer to proceed |
+    | `PENDING` | Customer is on the payment page | Poll status or wait for webhook |
+    | `PAID` | Payment completed successfully | Fulfil the order |
+    | `FAILED` | Payment attempt was unsuccessful | Prompt the customer to retry |
+    | `CANCELLED` | Payment was cancelled | Release reserved inventory |
+    | `REFUNDED` | Full refund has been issued | Update your records |
+
+    <Note>
+      For production integrations, rely on [webhooks](/concepts/webhooks) rather than polling the status endpoint. Webhooks deliver real-time payment events to your server without requiring repeated API calls.
+    </Note>
+  </Step>
+</Steps>
+
+## Next steps
+
+Now that you've made your first payment call, explore what else you can do:
+
+- [Authentication](/authentication) — understand API key scopes and how to rotate keys
+- [Accept payments guide](/guides/accept-payments) — build a complete checkout flow
+- [Webhooks](/concepts/webhooks) — receive real-time payment event notifications
+- [Testing](/guides/testing) — use test card numbers and UPI handles to simulate different outcomes

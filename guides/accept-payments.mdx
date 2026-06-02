@@ -1,0 +1,221 @@
+---
+title: "Accept Payments End-to-End with PayGlocal"
+description: "Learn how to initiate payments, redirect customers to the hosted checkout page, and verify payment status using the PayGlocal REST API."
+---
+
+Accepting a payment with PayGlocal involves four steps: creating a payment session, redirecting your customer to PayGlocal's hosted checkout page, handling the return redirect, and confirming the final status server-side. This guide walks you through the full flow from initiation to confirmation.
+
+<Note>
+  Use a unique `merchantTxnId` for every payment request. PayGlocal uses this value for idempotency — submitting the same `merchantTxnId` twice will not create a duplicate charge, but will return the original transaction.
+</Note>
+
+## Prerequisites
+
+- A PayGlocal account with API credentials
+- Your API key from the PayGlocal dashboard
+- A publicly accessible `returnUrl` endpoint on your server
+
+## Payment flow
+
+<Steps>
+  <Step title="Initiate a payment">
+    Send a `POST` request to `/gl/v1/payments/initiate` with your order details and billing information. PayGlocal returns a `redirectUrl` that you'll use in the next step.
+
+    <CodeGroup>
+    ```bash curl
+    curl -X POST https://api.payglocal.in/gl/v1/payments/initiate \
+      -H "Authorization: Bearer YOUR_API_KEY" \
+      -H "Content-Type: application/json" \
+      -d '{
+        "merchantId": "MERCH_001",
+        "merchantTxnId": "ORD_20240115_001",
+        "merchantUniqueId": "unique-txn-abc123",
+        "paymentData": {
+          "totalAmount": "1500.00",
+          "txnCurrency": "INR",
+          "billingData": {
+            "firstName": "Priya",
+            "lastName": "Sharma",
+            "addressStreet1": "45 Marine Drive",
+            "city": "Mumbai",
+            "state": "MH",
+            "country": "IN",
+            "postalCode": "400020",
+            "emailId": "priya.sharma@example.com",
+            "phoneNumber": "9876543210"
+          }
+        },
+        "pgData": {
+          "returnUrl": "https://yourstore.com/orders/ORD_20240115_001/return"
+        }
+      }'
+    ```
+
+    ```javascript Node.js
+    const response = await fetch('https://api.payglocal.in/gl/v1/payments/initiate', {
+      method: 'POST',
+      headers: {
+        'Authorization': 'Bearer YOUR_API_KEY',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        merchantId: 'MERCH_001',
+        merchantTxnId: 'ORD_20240115_001',
+        merchantUniqueId: 'unique-txn-abc123',
+        paymentData: {
+          totalAmount: '1500.00',
+          txnCurrency: 'INR',
+          billingData: {
+            firstName: 'Priya',
+            lastName: 'Sharma',
+            addressStreet1: '45 Marine Drive',
+            city: 'Mumbai',
+            state: 'MH',
+            country: 'IN',
+            postalCode: '400020',
+            emailId: 'priya.sharma@example.com',
+            phoneNumber: '9876543210',
+          },
+        },
+        pgData: {
+          returnUrl: 'https://yourstore.com/orders/ORD_20240115_001/return',
+        },
+      }),
+    });
+
+    const data = await response.json();
+    // data.redirectUrl is where you send the customer
+    ```
+    </CodeGroup>
+
+    A successful response looks like this:
+
+    ```json
+    {
+      "status": "SUCCESS",
+      "ygTransactionId": "YG_TXN_20240115_XYZ789",
+      "merchantTxnId": "ORD_20240115_001",
+      "redirectUrl": "https://pay.payglocal.in/checkout/YG_TXN_20240115_XYZ789"
+    }
+    ```
+
+    Store the `ygTransactionId` in your database alongside the order — you'll need it to check payment status and, if required, issue refunds later.
+  </Step>
+
+  <Step title="Redirect the customer">
+    Send your customer to the `redirectUrl` from the initiate response. PayGlocal hosts the checkout page, so no card data ever touches your server.
+
+    ```javascript Node.js
+    // Express example
+    app.post('/checkout', async (req, res) => {
+      const payment = await initiatePayment(req.body);
+      res.redirect(payment.redirectUrl);
+    });
+    ```
+
+    <Tip>
+      Open the `redirectUrl` in the same browser tab rather than a popup or iframe. Many payment methods (including UPI and net banking) require full-page redirects to complete authentication.
+    </Tip>
+  </Step>
+
+  <Step title="Handle the return redirect">
+    After the customer completes or abandons checkout, PayGlocal redirects them to your `returnUrl` with `ygTransactionId` appended as a query parameter.
+
+    ```
+    https://yourstore.com/orders/ORD_20240115_001/return?ygTransactionId=YG_TXN_20240115_XYZ789
+    ```
+
+    Parse the transaction ID from the query string and use it to verify the payment status in the next step.
+
+    ```javascript Node.js
+    app.get('/orders/:orderId/return', async (req, res) => {
+      const { ygTransactionId } = req.query;
+
+      if (!ygTransactionId) {
+        return res.redirect('/checkout/error');
+      }
+
+      // Proceed to verify status — do not mark the order as paid yet
+      const status = await verifyPaymentStatus(ygTransactionId);
+      // ...
+    });
+    ```
+
+    <Warning>
+      Never mark an order as paid based solely on the return redirect. The redirect can be spoofed or manipulated by the customer. Always verify payment status with a server-side API call before fulfilling the order.
+    </Warning>
+  </Step>
+
+  <Step title="Verify payment status">
+    Call `GET /gl/v1/payments/{ygTransactionId}/status` from your server to confirm the final payment state.
+
+    <CodeGroup>
+    ```bash curl
+    curl -X GET https://api.payglocal.in/gl/v1/payments/YG_TXN_20240115_XYZ789/status \
+      -H "Authorization: Bearer YOUR_API_KEY"
+    ```
+
+    ```javascript Node.js
+    async function verifyPaymentStatus(ygTransactionId) {
+      const response = await fetch(
+        `https://api.payglocal.in/gl/v1/payments/${ygTransactionId}/status`,
+        {
+          headers: {
+            'Authorization': 'Bearer YOUR_API_KEY',
+          },
+        }
+      );
+      return response.json();
+    }
+    ```
+    </CodeGroup>
+
+    The response includes a `status` field. Only fulfil the order when `status` is `SUCCESS`:
+
+    ```json
+    {
+      "ygTransactionId": "YG_TXN_20240115_XYZ789",
+      "merchantTxnId": "ORD_20240115_001",
+      "status": "SUCCESS",
+      "paymentData": {
+        "totalAmount": "1500.00",
+        "txnCurrency": "INR"
+      }
+    }
+    ```
+
+    | Status | Meaning |
+    |---|---|
+    | `INITIATED` | Payment session created, customer has not completed checkout |
+    | `PENDING` | Payment is being processed |
+    | `SUCCESS` | Payment confirmed — safe to fulfil the order |
+    | `FAILED` | Payment was not completed |
+    | `CANCELLED` | Customer or merchant cancelled the payment |
+    | `REFUNDED` | Payment has been refunded |
+  </Step>
+
+  <Step title="Listen for webhook confirmation">
+    PayGlocal sends a webhook to your registered endpoint when a payment reaches a terminal state (`SUCCESS`, `FAILED`, or `CANCELLED`). Webhooks are the most reliable way to handle async payment outcomes, especially if a customer closes their browser before being redirected back.
+
+    Register your webhook endpoint in the PayGlocal dashboard. Your endpoint should accept `POST` requests with a JSON body:
+
+    ```javascript Node.js
+    app.post('/webhooks/payglocal', express.json(), (req, res) => {
+      const { ygTransactionId, status, merchantTxnId } = req.body;
+
+      if (status === 'SUCCESS') {
+        // Fulfil order for merchantTxnId
+      } else if (status === 'FAILED' || status === 'CANCELLED') {
+        // Handle failed/cancelled payment
+      }
+
+      // Respond with 200 to acknowledge receipt
+      res.status(200).send('OK');
+    });
+    ```
+
+    <Note>
+      If your server is unavailable when PayGlocal sends a webhook, PayGlocal will retry delivery. Implement idempotent webhook handling so that processing the same event twice does not create duplicate fulfilments.
+    </Note>
+  </Step>
+</Steps>

@@ -1,0 +1,48 @@
+---
+title: "PayGlocal: Accept Global Payments via API"
+description: "PayGlocal is a REST API payment gateway for merchants. Learn what you can build, explore environments, and find the right guide to get started."
+---
+
+PayGlocal is a REST API payment gateway that lets you accept domestic and cross-border payments directly from your application. Whether you're building a checkout flow, a mobile payment experience, or an automated billing system, PayGlocal gives you a single API to collect payments via cards, UPI, net banking, and wallets — from customers anywhere in the world.
+
+## What you can build
+
+With PayGlocal, you can:
+
+- **Initiate payments** and redirect customers to a hosted payment page
+- **Check payment status** in real time or receive asynchronous updates via webhooks
+- **Cancel payments** that haven't been completed
+- **Issue refunds** — full or partial — against completed transactions
+- **Support multiple payment methods**, including cards, UPI, net banking, and wallets
+
+## Environments
+
+PayGlocal provides two environments so you can develop and test your integration safely before going live.
+
+| Environment | Base URL | Purpose |
+|---|---|---|
+| Sandbox | `https://api.sandbox.payglocal.in` | Development and testing |
+| Production | `https://api.payglocal.in` | Live payments |
+
+<Note>
+  Use sandbox credentials exclusively in your sandbox environment. Production API keys will not work against the sandbox base URL, and vice versa.
+</Note>
+
+All API requests use HTTPS. Plain HTTP requests are rejected. The API accepts JSON request bodies and returns JSON responses.
+
+## Where to go next
+
+<CardGroup cols={2}>
+  <Card title="Quickstart" icon="rocket" href="/quickstart">
+    Get your API key, make your first payment request, and check payment status in minutes.
+  </Card>
+  <Card title="Authentication" icon="key" href="/authentication">
+    Learn how to obtain API keys and attach them to every request using the Bearer token scheme.
+  </Card>
+  <Card title="Accept payments" icon="credit-card" href="/guides/accept-payments">
+    Follow a complete guide to integrating the payment initiation flow end to end.
+  </Card>
+  <Card title="API reference" icon="code" href="/api-reference/overview">
+    Browse every endpoint, request parameter, and response field in the full API reference.
+  </Card>
+</CardGroup>

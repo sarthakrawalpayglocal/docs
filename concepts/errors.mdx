@@ -1,0 +1,147 @@
+---
+title: "PayGlocal API Error Codes and Troubleshooting"
+description: "Understand PayGlocal API error responses, HTTP status codes, and common error codes, with guidance on handling and retrying errors in your integration."
+---
+
+When something goes wrong with an API request, PayGlocal returns a structured error response alongside an appropriate HTTP status code. Understanding these errors helps you distinguish between issues you can fix immediately (like a missing parameter) and issues that require a retry (like a temporary server error). This page explains the error format, lists the status codes and error codes you'll encounter, and covers how to handle each type effectively.
+
+## Error response format
+
+All error responses share the same JSON structure:
+
+```json
+{
+  "code": "ERR_INVALID_AMOUNT",
+  "message": "The amount field is required and must be a positive integer.",
+  "details": "Received value: -100. Amount must be greater than zero."
+}
+```
+
+| Field | Type | Description |
+|---|---|---|
+| `code` | string | A machine-readable error code specific to the failure reason. Use this in your error handling logic. |
+| `message` | string | A human-readable description of what went wrong. |
+| `details` | string | Additional context, such as which field failed validation or what value was received. May be absent for some error types. |
+
+## HTTP status codes
+
+PayGlocal uses standard HTTP status codes to indicate the category of error:
+
+| Status | Name | When you'll see it |
+|---|---|---|
+| `200` | OK | Request succeeded. |
+| `400` | Bad Request | Your request is malformed — a required field is missing or a value is invalid. |
+| `401` | Unauthorized | Your API key is missing, expired, or invalid. |
+| `403` | Forbidden | Your API key is valid but does not have permission for this operation. |
+| `404` | Not Found | The resource you're requesting does not exist (e.g., an unknown `ygTransactionId`). |
+| `409` | Conflict | A resource conflict — most commonly a duplicate `merchantTxnId`. |
+| `422` | Unprocessable Entity | The request is well-formed but violates a business rule (e.g., attempting to cancel a completed payment). |
+| `429` | Too Many Requests | You've exceeded the API rate limit. |
+| `500` | Internal Server Error | An unexpected error on PayGlocal's side. These are rare and usually transient. |
+
+## Common error codes
+
+| Code | HTTP status | Description |
+|---|---|---|
+| `ERR_MISSING_FIELD` | 400 | A required field is absent from the request body. |
+| `ERR_INVALID_FIELD` | 400 | A field value is present but invalid (wrong type, out of range, etc.). |
+| `ERR_INVALID_CURRENCY` | 400 | The specified currency is not supported or does not match the payment method. |
+| `ERR_INVALID_AMOUNT` | 400 | Amount is not a positive integer or exceeds the maximum allowed. |
+| `ERR_UNAUTHORIZED` | 401 | API key is missing from the `Authorization` header or is not recognized. |
+| `ERR_KEY_EXPIRED` | 401 | The API key has expired. Rotate your key in the dashboard. |
+| `ERR_FORBIDDEN` | 403 | The API key is valid but restricted from performing this action. |
+| `ERR_NOT_FOUND` | 404 | The requested resource (payment, refund) does not exist. |
+| `ERR_DUPLICATE_TXN` | 409 | A payment with the same `merchantTxnId` already exists. |
+| `ERR_INVALID_STATE` | 422 | Operation not allowed in the payment's current status (e.g., cancelling a `SUCCESS` payment). |
+| `ERR_REFUND_EXCEEDS_AMOUNT` | 422 | The refund amount is greater than the original payment or remaining refundable balance. |
+| `ERR_RATE_LIMITED` | 429 | Too many requests. Slow down and retry after the interval in the `Retry-After` header. |
+| `ERR_INTERNAL` | 500 | An unexpected server-side error. Retry with exponential backoff. |
+
+## Handling errors in your integration
+
+Different error categories require different handling strategies.
+
+### 4xx errors — fix before retrying
+
+Most `4xx` errors indicate a problem with your request. Retrying the same request will produce the same error. Fix the underlying issue first.
+
+- **400:** Check your request body against the API reference. Inspect the `details` field for the specific field and value that failed validation.
+- **401:** Verify that your `Authorization` header is set to `Bearer YOUR_API_KEY` and that the key is for the correct environment (sandbox vs production).
+- **403:** Your key may be missing a required scope. Check the key's permissions in the dashboard.
+- **404:** Confirm that the `ygTransactionId` or `refundId` you're using exists and belongs to your account.
+- **409:** Generate a new, unique `merchantTxnId` for the retry attempt. Do not reuse the conflicting ID.
+- **422:** Read the `message` and `details` fields carefully — the operation is not valid given the current state of the resource.
+
+### 429 — rate limited
+
+When you receive a `429`, stop sending requests and wait. The response includes a `Retry-After` header specifying how many seconds to wait before retrying.
+
+```http
+HTTP/1.1 429 Too Many Requests
+Retry-After: 30
+```
+
+Implement a rate limiter on your side to stay within limits and avoid triggering `429` responses in the first place.
+
+### 5xx errors — retry with backoff
+
+A `500` response means something went wrong on PayGlocal's infrastructure. These are typically transient. Use exponential backoff with jitter when retrying:
+
+```javascript
+async function requestWithRetry(apiFn, maxAttempts = 3) {
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      return await apiFn();
+    } catch (error) {
+      if (attempt === maxAttempts || error.status < 500) {
+        throw error; // Don't retry 4xx or after max attempts
+      }
+      const delay = Math.pow(2, attempt) * 1000 + Math.random() * 1000;
+      await new Promise(resolve => setTimeout(resolve, delay));
+    }
+  }
+}
+```
+
+<Warning>
+  Never retry `4xx` errors automatically (except `429` with the `Retry-After` delay). Retrying a `400` or `422` will not succeed and may exhaust your rate limit quota.
+</Warning>
+
+## Troubleshooting common scenarios
+
+<AccordionGroup>
+  <Accordion title="My payment initiation returns 401 Unauthorized">
+    Check the following:
+    - Your request includes an `Authorization` header with the format `Bearer YOUR_API_KEY`.
+    - You're using the correct API key for the environment — sandbox keys do not work against the production URL and vice versa.
+    - The key has not been revoked. Regenerate it in the dashboard under **Settings → API Keys** if needed.
+  </Accordion>
+
+  <Accordion title="I'm getting ERR_DUPLICATE_TXN on a payment I thought failed">
+    PayGlocal records a payment object as soon as you call `POST /gl/v1/payments/initiate`, even if the payment subsequently fails. The `merchantTxnId` is consumed by that first call. For your retry, generate a new unique `merchantTxnId`. You can append a counter or timestamp to your original order ID (e.g., `order_abc123_attempt_2`).
+  </Accordion>
+
+  <Accordion title="My webhook signature verification is failing">
+    Signature verification fails when the request body is modified before the hash is computed. Common causes:
+    - Your framework is parsing the JSON body before you read it. Pass the raw bytes to the HMAC function.
+    - You're using a different secret key than the one shown in the dashboard for that specific endpoint.
+    - The `X-PayGlocal-Signature` header includes a `sha256=` prefix — strip it before comparing, or include it in your expected value (see the verification examples on the [Webhooks](/concepts/webhooks) page).
+  </Accordion>
+
+  <Accordion title="A payment is stuck in PENDING status">
+    `PENDING` is expected for some payment methods (Net Banking, UPI) while the bank processes the transaction. Most resolve within a few minutes. If a payment remains in `PENDING` for more than 30 minutes:
+    - Check your webhook delivery logs in the dashboard to see if a terminal status event was sent but not received.
+    - Call `GET /gl/v1/payments/{ygTransactionId}/status` to poll for the current state.
+    - Contact PayGlocal support with the `ygTransactionId` if the issue persists.
+  </Accordion>
+
+  <Accordion title="I'm receiving 422 ERR_INVALID_STATE when trying to cancel a payment">
+    Cancellation is only available for payments in `INITIATED` or `PENDING` status. If the payment has already reached `SUCCESS` or `FAILED`, it cannot be cancelled. For a successful payment you need to reverse, use the refunds API (`POST /gl/v1/refunds`) instead.
+  </Accordion>
+
+  <Accordion title="My integration works in sandbox but fails in production with 403 Forbidden">
+    Production API keys may have different permission scopes than sandbox keys. Check that:
+    - You're using your production API key, not a sandbox key.
+    - The key has the required permissions enabled. Some operations (e.g., refunds) require explicit permission grants. Review your key's scope in the dashboard under **Settings → API Keys**.
+  </Accordion>
+</AccordionGroup>

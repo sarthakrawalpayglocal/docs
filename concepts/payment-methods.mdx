@@ -1,0 +1,154 @@
+---
+title: "PayGlocal Supported Payment Methods Guide"
+description: "Learn which payment methods PayGlocal supports, including cards, UPI, net banking, and wallets, and how to specify them in your API requests."
+---
+
+PayGlocal supports a range of domestic and international payment methods, letting your customers pay using their preferred option whether they're in India or abroad. You specify the payment method in your initiation request, and PayGlocal handles routing to the appropriate payment network. This page describes each method, the currencies it supports, and how to reference it in the API.
+
+## Cards
+
+Card payments are supported for both domestic (Indian-issued) and international cards across major networks.
+
+<CardGroup cols={2}>
+  <Card title="Visa" icon="credit-card">
+    Domestic and international debit and credit cards. Supports 3D Secure authentication for eligible cards.
+  </Card>
+  <Card title="Mastercard" icon="credit-card">
+    Domestic and international debit and credit cards. Supports 3D Secure authentication for eligible cards.
+  </Card>
+  <Card title="American Express" icon="credit-card">
+    International credit cards. Primarily used for international transactions.
+  </Card>
+  <Card title="RuPay" icon="credit-card">
+    Domestic Indian debit and credit cards. Accepted for INR transactions only.
+  </Card>
+</CardGroup>
+
+**Supported currencies:** INR for domestic cards; USD, GBP, EUR, AUD, SGD, AED, and other major currencies for international cards.
+
+To initiate a card payment, set `paymentMethod` to `CARD` in your request body. The customer selects their specific card type on the PayGlocal-hosted payment page.
+
+```json
+{
+  "merchantTxnId": "order_abc123",
+  "amount": 149900,
+  "currency": "INR",
+  "paymentMethod": "CARD",
+  "returnUrl": "https://yourapp.com/checkout/return"
+}
+```
+
+<Note>
+  Card details are entered directly on PayGlocal's hosted payment page. You do not handle raw card numbers in your integration, which keeps you out of PCI DSS scope for card data.
+</Note>
+
+## UPI
+
+Unified Payments Interface (UPI) is a real-time payment system operated by NPCI, widely used for instant INR transfers in India.
+
+<CardGroup cols={2}>
+  <Card title="VPA-based payment" icon="at-sign">
+    The customer enters their UPI Virtual Payment Address (e.g., `user@upibank`) to authorize the payment from their UPI app.
+  </Card>
+  <Card title="QR code payment" icon="qr-code">
+    A QR code is generated on the payment page. The customer scans it using any UPI-compatible app such as BHIM, Google Pay, or PhonePe.
+  </Card>
+</CardGroup>
+
+**Supported currencies:** INR only.
+
+**Typical settlement:** Near-instant, though some transactions may remain in `PENDING` for a few minutes while the UPI network confirms.
+
+To initiate a UPI payment:
+
+```json
+{
+  "merchantTxnId": "order_abc123",
+  "amount": 50000,
+  "currency": "INR",
+  "paymentMethod": "UPI",
+  "returnUrl": "https://yourapp.com/checkout/return"
+}
+```
+
+<Tip>
+  For UPI payments, subscribe to the `PAYMENT_SUCCESS` webhook event rather than relying only on the return redirect. UPI transactions occasionally complete after the customer has already navigated away from the payment page.
+</Tip>
+
+## Net Banking
+
+Net Banking allows customers to pay directly from their bank account using their bank's internet banking portal. PayGlocal supports all major Indian banks.
+
+**Supported banks include:** SBI, HDFC, ICICI, Axis, Kotak, Yes Bank, IDFC First, and others. The complete list of enabled banks is presented to the customer on the PayGlocal payment page.
+
+**Supported currencies:** INR only.
+
+**Typical settlement:** Same day for most banks, though funds may take up to one business day to settle depending on the bank.
+
+To initiate a Net Banking payment:
+
+```json
+{
+  "merchantTxnId": "order_abc123",
+  "amount": 250000,
+  "currency": "INR",
+  "paymentMethod": "NETBANKING",
+  "returnUrl": "https://yourapp.com/checkout/return"
+}
+```
+
+<Warning>
+  Net Banking payments can take longer to confirm than cards or UPI. A payment may stay in `PENDING` status for several minutes. Set up webhooks and avoid marking orders as failed prematurely.
+</Warning>
+
+## Wallets
+
+PayGlocal supports popular Indian digital wallets for fast, low-friction payments.
+
+**Supported wallets include:** Paytm, PhonePe, Mobikwik, Freecharge, and Airtel Money.
+
+**Supported currencies:** INR only.
+
+**Typical settlement:** Near-instant for wallet-to-merchant transfers.
+
+To initiate a wallet payment:
+
+```json
+{
+  "merchantTxnId": "order_abc123",
+  "amount": 9900,
+  "currency": "INR",
+  "paymentMethod": "WALLET",
+  "returnUrl": "https://yourapp.com/checkout/return"
+}
+```
+
+The customer selects their specific wallet from the options presented on the PayGlocal-hosted payment page.
+
+## Currency support summary
+
+| Payment method | Domestic (INR) | International currencies |
+|---|---|---|
+| Cards (Visa, Mastercard) | Yes | USD, GBP, EUR, AUD, SGD, AED, and more |
+| Cards (Amex) | No | USD, GBP, EUR, and more |
+| Cards (RuPay) | Yes | No |
+| UPI | Yes | No |
+| Net Banking | Yes | No |
+| Wallets | Yes | No |
+
+<Note>
+  For a definitive list of supported international currencies for your account type, contact PayGlocal support or check your dashboard settings. Currency availability may vary based on your merchant category.
+</Note>
+
+## Letting PayGlocal choose the method
+
+If you omit `paymentMethod` from your request, PayGlocal displays all available payment options to the customer on the hosted payment page. This is the easiest approach if you want to offer maximum choice without managing method selection in your UI.
+
+```json
+{
+  "merchantTxnId": "order_abc123",
+  "amount": 149900,
+  "currency": "INR",
+  "returnUrl": "https://yourapp.com/checkout/return"
+}
+```

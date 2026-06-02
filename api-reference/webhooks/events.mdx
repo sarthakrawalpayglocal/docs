@@ -1,0 +1,125 @@
+---
+title: "PayGlocal Webhook Event Types Reference"
+description: "Reference for all PayGlocal webhook event types, their trigger conditions, and the full payload structure delivered to your endpoint on each event."
+---
+
+PayGlocal sends webhook events to notify your server whenever a significant change occurs on a transaction or refund. Instead of polling the API repeatedly, you can configure a webhook endpoint in your dashboard (or per-transaction via `pgData.notifyUrl`) and react to events as they happen. Each event is delivered as an HTTP `POST` request with a JSON body.
+
+Every webhook payload includes a `signature` field that you should use to verify the request came from PayGlocal before processing it. See [Verify webhook signatures](/api-reference/webhooks/verification) for implementation details.
+
+## Configuring your webhook endpoint
+
+Register your webhook URL in the PayGlocal merchant dashboard under **Settings → Webhooks**. Your endpoint must:
+
+- Accept HTTP `POST` requests
+- Respond with a `2xx` status code within **5 seconds** to acknowledge receipt
+- Process the event asynchronously if any heavy work is needed
+
+<Note>
+PayGlocal retries failed webhook deliveries up to **3 times** with exponential backoff (1 min, 5 min, 30 min). If all retries fail, the event is marked as undelivered and visible in the dashboard for manual review.
+</Note>
+
+## Event types
+
+| Event               | Triggered when                                              |
+| ------------------- | ----------------------------------------------------------- |
+| `PAYMENT_SUCCESS`   | A payment completes successfully                            |
+| `PAYMENT_FAILED`    | A payment attempt fails (e.g., card declined, timeout)     |
+| `PAYMENT_CANCELLED` | A payment is cancelled via the API or by the customer      |
+| `REFUND_PROCESSED`  | A refund is successfully sent to the customer's account    |
+| `REFUND_FAILED`     | A refund attempt fails during processing                   |
+
+## PAYMENT_SUCCESS
+
+Sent when a payment reaches terminal status `SUCCESS`. This is the primary event to listen to for fulfilling orders.
+
+```json
+{
+  "event": "PAYMENT_SUCCESS",
+  "ygTransactionId": "YG_TXN_20240115_XYZ789",
+  "merchantTxnId": "ORD_20240115_001",
+  "merchantId": "MERCH_001",
+  "amount": "1500.00",
+  "currency": "INR",
+  "paymentMethod": "CARD",
+  "timestamp": "2024-01-15T10:30:00Z",
+  "signature": "sha256=abc123..."
+}
+```
+
+## PAYMENT_FAILED
+
+Sent when a payment attempt reaches terminal status `FAILED`. The `failureReason` field provides context for the failure.
+
+```json
+{
+  "event": "PAYMENT_FAILED",
+  "ygTransactionId": "YG_TXN_20240115_XYZ790",
+  "merchantTxnId": "ORD_20240115_002",
+  "merchantId": "MERCH_001",
+  "amount": "2000.00",
+  "currency": "INR",
+  "paymentMethod": "CARD",
+  "failureReason": "INSUFFICIENT_FUNDS",
+  "timestamp": "2024-01-15T11:05:00Z",
+  "signature": "sha256=def456..."
+}
+```
+
+## PAYMENT_CANCELLED
+
+Sent when a payment is cancelled, either by your server via the [cancel endpoint](/api-reference/payments/cancel) or by the customer abandoning the checkout page.
+
+```json
+{
+  "event": "PAYMENT_CANCELLED",
+  "ygTransactionId": "YG_TXN_20240115_XYZ791",
+  "merchantTxnId": "ORD_20240115_003",
+  "merchantId": "MERCH_001",
+  "amount": "500.00",
+  "currency": "INR",
+  "timestamp": "2024-01-15T11:30:00Z",
+  "signature": "sha256=ghi789..."
+}
+```
+
+## REFUND_PROCESSED
+
+Sent when a refund is successfully processed and the funds have been returned to the customer's account.
+
+```json
+{
+  "event": "REFUND_PROCESSED",
+  "refundId": "YG_REF_20240116_ABC123",
+  "ygTransactionId": "YG_TXN_20240115_XYZ789",
+  "merchantRefundId": "REF_20240116_001",
+  "merchantId": "MERCH_001",
+  "refundAmount": "750.00",
+  "currency": "INR",
+  "timestamp": "2024-01-16T11:45:00Z",
+  "signature": "sha256=jkl012..."
+}
+```
+
+## REFUND_FAILED
+
+Sent when a refund fails during processing. Check the `failureReason` field and contact PayGlocal support if the issue persists.
+
+```json
+{
+  "event": "REFUND_FAILED",
+  "refundId": "YG_REF_20240116_ABC124",
+  "ygTransactionId": "YG_TXN_20240115_XYZ789",
+  "merchantRefundId": "REF_20240116_002",
+  "merchantId": "MERCH_001",
+  "refundAmount": "750.00",
+  "currency": "INR",
+  "failureReason": "BANK_PROCESSING_ERROR",
+  "timestamp": "2024-01-16T12:00:00Z",
+  "signature": "sha256=mno345..."
+}
+```
+
+## Handling duplicate events
+
+PayGlocal guarantees **at-least-once** delivery. Your endpoint may occasionally receive the same event more than once. Use the `ygTransactionId` (or `refundId` for refund events) as an idempotency key — check whether you have already processed an event for that ID before taking any action.

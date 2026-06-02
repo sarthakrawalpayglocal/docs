@@ -1,0 +1,165 @@
+---
+title: "Issue Full and Partial Refunds with PayGlocal"
+description: "Learn how to create full or partial refunds, check refund status, and understand timelines and limitations for PayGlocal transactions."
+---
+
+PayGlocal supports both full and partial refunds for successful payments. You might need to issue a refund when a customer returns a product, a transaction is disputed, or a billing error occurs. This guide covers how to create a refund, track its status, and understand the constraints that apply.
+
+## Limitations
+
+Before issuing a refund, note the following:
+
+- You can only refund payments with a `SUCCESS` status.
+- Refunds must be requested within **180 days** of the original transaction.
+- The total refunded amount across all refund requests cannot exceed the original payment amount.
+
+<Warning>
+  Submitting duplicate refund requests with the same `merchantRefundId` can result in errors or unexpected behavior. Always use a unique `merchantRefundId` per refund request, and check the status of an existing refund before creating a new one.
+</Warning>
+
+## Step 1: Create a refund
+
+Send a `POST` request to `/gl/v1/refunds` with the transaction ID and the amount you want to refund.
+
+<Note>
+  For a **partial refund**, set `refundAmount` to any value less than the original payment amount. You can issue multiple partial refunds against the same transaction as long as the cumulative total does not exceed the original amount.
+</Note>
+
+<Tabs>
+  <Tab title="Full refund">
+    <CodeGroup>
+    ```bash curl
+    curl -X POST https://api.payglocal.in/gl/v1/refunds \
+      -H "Authorization: Bearer YOUR_API_KEY" \
+      -H "Content-Type: application/json" \
+      -d '{
+        "ygTransactionId": "YG_TXN_20240115_XYZ789",
+        "refundAmount": "1500.00",
+        "refundCurrency": "INR",
+        "refundReason": "Customer requested return",
+        "merchantRefundId": "REF_20240116_001"
+      }'
+    ```
+
+    ```javascript Node.js
+    const response = await fetch('https://api.payglocal.in/gl/v1/refunds', {
+      method: 'POST',
+      headers: {
+        'Authorization': 'Bearer YOUR_API_KEY',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        ygTransactionId: 'YG_TXN_20240115_XYZ789',
+        refundAmount: '1500.00',
+        refundCurrency: 'INR',
+        refundReason: 'Customer requested return',
+        merchantRefundId: 'REF_20240116_001',
+      }),
+    });
+
+    const refund = await response.json();
+    ```
+    </CodeGroup>
+  </Tab>
+  <Tab title="Partial refund">
+    <CodeGroup>
+    ```bash curl
+    curl -X POST https://api.payglocal.in/gl/v1/refunds \
+      -H "Authorization: Bearer YOUR_API_KEY" \
+      -H "Content-Type: application/json" \
+      -d '{
+        "ygTransactionId": "YG_TXN_20240115_XYZ789",
+        "refundAmount": "500.00",
+        "refundCurrency": "INR",
+        "refundReason": "Partial return for item SKU-42",
+        "merchantRefundId": "REF_20240116_002"
+      }'
+    ```
+
+    ```javascript Node.js
+    const response = await fetch('https://api.payglocal.in/gl/v1/refunds', {
+      method: 'POST',
+      headers: {
+        'Authorization': 'Bearer YOUR_API_KEY',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        ygTransactionId: 'YG_TXN_20240115_XYZ789',
+        refundAmount: '500.00',
+        refundCurrency: 'INR',
+        refundReason: 'Partial return for item SKU-42',
+        merchantRefundId: 'REF_20240116_002',
+      }),
+    });
+
+    const refund = await response.json();
+    ```
+    </CodeGroup>
+  </Tab>
+</Tabs>
+
+A successful response includes a `refundId` you'll use to track the refund:
+
+```json
+{
+  "status": "PENDING",
+  "refundId": "RFD_20240116_ABC456",
+  "merchantRefundId": "REF_20240116_001",
+  "ygTransactionId": "YG_TXN_20240115_XYZ789",
+  "refundAmount": "500.00",
+  "refundCurrency": "INR"
+}
+```
+
+Store `refundId` in your database so you can query its status later.
+
+## Step 2: Check refund status
+
+Refunds are processed asynchronously. Use `GET /gl/v1/refunds/{refundId}` to poll the current state or handle status updates via webhooks.
+
+<CodeGroup>
+```bash curl
+curl -X GET https://api.payglocal.in/gl/v1/refunds/RFD_20240116_ABC456 \
+  -H "Authorization: Bearer YOUR_API_KEY"
+```
+
+```javascript Node.js
+const response = await fetch(
+  'https://api.payglocal.in/gl/v1/refunds/RFD_20240116_ABC456',
+  {
+    headers: {
+      'Authorization': 'Bearer YOUR_API_KEY',
+    },
+  }
+);
+
+const refund = await response.json();
+```
+</CodeGroup>
+
+```json
+{
+  "refundId": "RFD_20240116_ABC456",
+  "merchantRefundId": "REF_20240116_001",
+  "ygTransactionId": "YG_TXN_20240115_XYZ789",
+  "status": "PROCESSED",
+  "refundAmount": "500.00",
+  "refundCurrency": "INR"
+}
+```
+
+## Refund statuses
+
+| Status | Meaning |
+|---|---|
+| `PENDING` | Refund has been accepted and is being processed |
+| `PROCESSED` | Refund has been sent to the customer's bank |
+| `FAILED` | Refund could not be completed — contact support |
+
+## Refund timeline
+
+Once a refund reaches `PROCESSED` status, funds typically appear in the customer's account within **5–7 business days**, depending on their bank or card network. You should communicate this timeline to your customers to reduce support inquiries.
+
+<Tip>
+  Listen for refund webhooks to update your order management system as soon as a refund is processed, rather than polling the status endpoint repeatedly.
+</Tip>

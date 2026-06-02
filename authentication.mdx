@@ -1,0 +1,172 @@
+---
+title: "API Key Authentication for PayGlocal Merchants"
+description: "Learn how to obtain PayGlocal API keys, attach them to every request using the Bearer token scheme, and resolve common authentication errors."
+---
+
+Every request to the PayGlocal API must include a valid API key. PayGlocal uses the standard HTTP `Authorization` header with a Bearer token scheme. There are no session tokens, cookies, or OAuth flows — you simply include your secret key on each request.
+
+## Get your API keys
+
+API keys are generated per environment. Log in to the [PayGlocal merchant dashboard](https://dashboard.payglocal.in) and go to **Settings → API Keys**.
+
+You'll see two sets of keys:
+
+| Key type | Prefix | Environment |
+|---|---|---|
+| Sandbox secret key | `sk_test_` | `https://api.sandbox.payglocal.in` |
+| Production secret key | `sk_live_` | `https://api.payglocal.in` |
+
+Each key is shown only once when first generated. Copy it immediately and store it securely.
+
+<Warning>
+  Never expose your secret key in client-side code, public repositories, or logs. If a key is compromised, revoke it immediately from the dashboard and replace it with a newly generated key. PayGlocal cannot recover or re-display a key after initial generation.
+</Warning>
+
+## Attach the key to requests
+
+Include your API key as a Bearer token in the `Authorization` header of every request:
+
+```
+Authorization: Bearer <your-api-key>
+```
+
+The following examples show how to attach the header in common HTTP clients:
+
+<CodeGroup>
+
+```bash cURL
+curl --request POST \
+  --url https://api.sandbox.payglocal.in/gl/v1/payments/initiate \
+  --header 'Authorization: Bearer sk_test_4eC39HqLyjWDarjtT7fin9oLpjD2HFmD' \
+  --header 'Content-Type: application/json' \
+  --data '{
+    "merchantId": "MERCH_001",
+    "merchantTxnId": "ORD_20240115_002",
+    "merchantUniqueId": "unique-id-67890",
+    "paymentData": {
+      "totalAmount": "500.00",
+      "txnCurrency": "INR",
+      "billingData": {
+        "firstName": "Priya",
+        "lastName": "Sharma",
+        "emailId": "priya.sharma@example.com",
+        "country": "IN"
+      }
+    },
+    "pgData": {
+      "returnUrl": "https://yoursite.com/payment/return"
+    }
+  }'
+```
+
+```javascript JavaScript
+const response = await fetch(
+  'https://api.sandbox.payglocal.in/gl/v1/payments/initiate',
+  {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${process.env.PAYGLOCAL_API_KEY}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      merchantId: 'MERCH_001',
+      merchantTxnId: 'ORD_20240115_002',
+      merchantUniqueId: 'unique-id-67890',
+      paymentData: {
+        totalAmount: '500.00',
+        txnCurrency: 'INR',
+        billingData: {
+          firstName: 'Priya',
+          lastName: 'Sharma',
+          emailId: 'priya.sharma@example.com',
+          country: 'IN',
+        },
+      },
+      pgData: {
+        returnUrl: 'https://yoursite.com/payment/return',
+      },
+    }),
+  }
+);
+```
+
+```python Python
+import os
+import requests
+
+response = requests.post(
+    "https://api.sandbox.payglocal.in/gl/v1/payments/initiate",
+    headers={
+        "Authorization": f"Bearer {os.environ['PAYGLOCAL_API_KEY']}",
+        "Content-Type": "application/json",
+    },
+    json={
+        "merchantId": "MERCH_001",
+        "merchantTxnId": "ORD_20240115_002",
+        "merchantUniqueId": "unique-id-67890",
+        "paymentData": {
+            "totalAmount": "500.00",
+            "txnCurrency": "INR",
+            "billingData": {
+                "firstName": "Priya",
+                "lastName": "Sharma",
+                "emailId": "priya.sharma@example.com",
+                "country": "IN",
+            },
+        },
+        "pgData": {
+            "returnUrl": "https://yoursite.com/payment/return",
+        },
+    },
+)
+```
+
+</CodeGroup>
+
+<Note>
+  Read your API key from an environment variable at runtime rather than hardcoding it. In local development, use a `.env` file (and add it to `.gitignore`). In production, inject the variable via your hosting platform's secrets manager or environment configuration.
+</Note>
+
+## Sandbox vs production keys
+
+Use sandbox keys while building and testing. Sandbox keys only work against `https://api.sandbox.payglocal.in` — requests sent to the production base URL with a sandbox key will be rejected, and vice versa.
+
+When you're ready to go live, replace `sk_test_` with your `sk_live_` key and update the base URL in your configuration.
+
+## Authentication errors
+
+When a request fails due to an invalid, missing, or mismatched API key, the API returns HTTP `401 Unauthorized`:
+
+```json 401 response
+{
+  "status": "FAILURE",
+  "errorCode": "UNAUTHORIZED",
+  "message": "Invalid or missing API key. Provide a valid Bearer token in the Authorization header.",
+  "requestId": "req_8xTz2aK3mNpQ7vRs"
+}
+```
+
+Common causes of `401` errors:
+
+| Cause | Fix |
+|---|---|
+| `Authorization` header is absent | Add `Authorization: Bearer <key>` to every request |
+| Key has been revoked | Generate a new key in the dashboard |
+| Sandbox key used against production URL | Match the key type to the correct base URL |
+| Production key used against sandbox URL | Match the key type to the correct base URL |
+| Whitespace or formatting in the key value | Ensure the key is copied exactly, with no leading/trailing spaces |
+
+If the key is valid but the request is missing required fields, you'll receive `400 Bad Request` instead. A `401` always means an authentication problem specifically.
+
+## Key rotation
+
+Rotate your API keys periodically or immediately if you suspect exposure. In the dashboard under **Settings → API Keys**:
+
+1. Generate a new key.
+2. Update your environment variable or secrets manager with the new value.
+3. Verify your integration is working with the new key.
+4. Revoke the old key.
+
+<Tip>
+  During key rotation, you can have both the old and new key active at the same time. This lets you deploy the new key to your servers without any downtime before revoking the old one.
+</Tip>

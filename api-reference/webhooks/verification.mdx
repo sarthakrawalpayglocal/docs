@@ -1,0 +1,159 @@
+---
+title: "Verify Webhook Signatures from PayGlocal"
+description: "Learn how to validate the HMAC-SHA256 signature on incoming PayGlocal webhooks to ensure events are authentic and have not been tampered with."
+---
+
+Every webhook PayGlocal delivers includes a `signature` field in the JSON payload. This signature is computed by PayGlocal using HMAC-SHA256 over the raw request body with your webhook secret as the key. Verifying this signature before processing any event ensures that the request genuinely came from PayGlocal and that the payload has not been altered in transit.
+
+<Warning>
+Always verify the webhook signature before acting on any event. Skipping verification exposes your system to forged requests that could trigger unauthorized order fulfillments, refunds, or other business logic.
+</Warning>
+
+## How the signature is computed
+
+PayGlocal computes the signature as follows:
+
+1. Serializes the webhook payload to a JSON string (the raw request body as received).
+2. Computes an HMAC-SHA256 digest of that string using your **webhook secret** as the key.
+3. Encodes the digest as a lowercase hex string.
+4. Prefixes the result with `sha256=` and includes it in the `signature` field of the payload.
+
+To verify the signature, you perform the same computation on your side and compare it to the value in the payload using a constant-time comparison to prevent timing attacks.
+
+## Retrieving your webhook secret
+
+Your webhook secret is available in the PayGlocal merchant dashboard under **Settings → Webhooks**. It is different from your API key and is specific to webhook verification. Store it in an environment variable — never hardcode it in your application.
+
+## Verification examples
+
+<CodeGroup>
+
+```javascript Node.js
+const crypto = require("crypto");
+
+/**
+ * Verifies a PayGlocal webhook signature.
+ *
+ * @param {string} rawBody - The raw request body as a string (do not parse before verifying).
+ * @param {string} receivedSignature - The value of the `signature` field in the payload.
+ * @param {string} webhookSecret - Your webhook secret from the PayGlocal dashboard.
+ * @returns {boolean} true if the signature is valid, false otherwise.
+ */
+function verifyWebhookSignature(rawBody, receivedSignature, webhookSecret) {
+  const expectedSignature =
+    "sha256=" +
+    crypto
+      .createHmac("sha256", webhookSecret)
+      .update(rawBody, "utf8")
+      .digest("hex");
+
+  // Use timingSafeEqual to prevent timing attacks
+  const expected = Buffer.from(expectedSignature, "utf8");
+  const received = Buffer.from(receivedSignature, "utf8");
+
+  if (expected.length !== received.length) {
+    return false;
+  }
+
+  return crypto.timingSafeEqual(expected, received);
+}
+
+// Express.js example — use express.raw() middleware to get the raw body
+app.post("/webhooks/payglocal", express.raw({ type: "application/json" }), (req, res) => {
+  const rawBody = req.body.toString("utf8");
+  const payload = JSON.parse(rawBody);
+  const receivedSignature = payload.signature;
+  const webhookSecret = process.env.PAYGLOCAL_WEBHOOK_SECRET;
+
+  if (!verifyWebhookSignature(rawBody, receivedSignature, webhookSecret)) {
+    console.error("Invalid webhook signature — rejecting request.");
+    return res.status(401).send("Invalid signature");
+  }
+
+  // Signature is valid — process the event
+  switch (payload.event) {
+    case "PAYMENT_SUCCESS":
+      // Fulfill the order
+      break;
+    case "REFUND_PROCESSED":
+      // Update refund status
+      break;
+    default:
+      console.log(`Unhandled event type: ${payload.event}`);
+  }
+
+  res.status(200).send("OK");
+});
+```
+
+```python Python
+import hashlib
+import hmac
+import json
+import os
+
+from flask import Flask, request, abort
+
+app = Flask(__name__)
+
+
+def verify_webhook_signature(raw_body: bytes, received_signature: str, webhook_secret: str) -> bool:
+    """
+    Verifies a PayGlocal webhook signature.
+
+    Args:
+        raw_body: The raw request body as bytes (do not decode/parse before verifying).
+        received_signature: The value of the `signature` field in the payload.
+        webhook_secret: Your webhook secret from the PayGlocal dashboard.
+
+    Returns:
+        True if the signature is valid, False otherwise.
+    """
+    expected_digest = hmac.new(
+        webhook_secret.encode("utf-8"),
+        raw_body,
+        hashlib.sha256,
+    ).hexdigest()
+
+    expected_signature = f"sha256={expected_digest}"
+
+    # Use hmac.compare_digest to prevent timing attacks
+    return hmac.compare_digest(expected_signature, received_signature)
+
+
+@app.route("/webhooks/payglocal", methods=["POST"])
+def handle_webhook():
+    raw_body = request.get_data()  # Get raw bytes before any parsing
+    payload = json.loads(raw_body)
+    received_signature = payload.get("signature", "")
+    webhook_secret = os.environ["PAYGLOCAL_WEBHOOK_SECRET"]
+
+    if not verify_webhook_signature(raw_body, received_signature, webhook_secret):
+        print("Invalid webhook signature — rejecting request.")
+        abort(401)
+
+    # Signature is valid — process the event
+    event = payload.get("event")
+
+    if event == "PAYMENT_SUCCESS":
+        pass  # Fulfill the order
+    elif event == "REFUND_PROCESSED":
+        pass  # Update refund status
+    else:
+        print(f"Unhandled event type: {event}")
+
+    return "OK", 200
+```
+
+</CodeGroup>
+
+## Key implementation details
+
+- **Use the raw body.** Compute the HMAC over the raw, unparsed request body string. Parsing the JSON first and re-serializing it may produce a different byte sequence and cause verification to fail.
+- **Use constant-time comparison.** Compare signatures with `crypto.timingSafeEqual` (Node.js) or `hmac.compare_digest` (Python) to prevent timing-based attacks.
+- **Store the secret securely.** Keep your webhook secret in an environment variable or secrets manager. Rotate it immediately in the dashboard if you suspect it has been compromised.
+- **Respond quickly.** Acknowledge the webhook with a `2xx` status within 5 seconds. Offload any slow processing to a background queue.
+
+<Note>
+If signature verification is failing unexpectedly, confirm that you are reading the raw request body **before** any middleware parses it. Frameworks like Express.js may consume the body stream during JSON parsing unless you use `express.raw()` middleware for the webhook route.
+</Note>

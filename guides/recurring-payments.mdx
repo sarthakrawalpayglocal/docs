@@ -1,0 +1,194 @@
+---
+title: "Set Up Recurring Payments with PayGlocal"
+description: "Learn how to use PayGlocal mandates to charge customers on a recurring basis for subscriptions, EMIs, and scheduled billing without storing card data."
+---
+
+Recurring payments let you charge a customer multiple times without them re-entering their payment details for each transaction. PayGlocal handles this through a mandate and token system: the customer authorises a mandate during the first payment, and you use the resulting `mandateToken` for all subsequent charges. This approach is commonly used for subscriptions, equated monthly instalments (EMIs), and scheduled billing cycles.
+
+<Note>
+  Recurring payments require your merchant account to be enabled for mandate-based billing. Contact PayGlocal support or your account manager to enable this feature before implementing the flow below.
+</Note>
+
+## How mandate-based recurring works
+
+The flow has two distinct phases:
+
+1. **First payment** — the customer completes a normal checkout and explicitly authorises a mandate. PayGlocal returns a `mandateToken` once the payment succeeds.
+2. **Subsequent charges** — you use the `mandateToken` to initiate charges on your schedule, with no customer interaction required.
+
+## Step 1: Initiate the first payment with a mandate
+
+Add a `mandateData` object to your standard payment initiation request. This signals to PayGlocal that the customer should be asked to authorise recurring charges during checkout.
+
+<CodeGroup>
+```bash curl
+curl -X POST https://api.payglocal.in/gl/v1/payments/initiate \
+  -H "Authorization: Bearer YOUR_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "merchantId": "MERCH_001",
+    "merchantTxnId": "SUB_20240115_001",
+    "merchantUniqueId": "sub-signup-abc123",
+    "paymentData": {
+      "totalAmount": "999.00",
+      "txnCurrency": "INR",
+      "billingData": {
+        "firstName": "Rahul",
+        "lastName": "Verma",
+        "emailId": "rahul.verma@example.com",
+        "phoneNumber": "9876543210",
+        "addressStreet1": "12 Park Street",
+        "city": "Bengaluru",
+        "state": "KA",
+        "country": "IN",
+        "postalCode": "560001"
+      }
+    },
+    "pgData": {
+      "returnUrl": "https://yourapp.com/subscriptions/SUB_20240115_001/return"
+    },
+    "mandateData": {
+      "mandateType": "RECURRING",
+      "frequency": "MONTHLY",
+      "maxAmount": "999.00",
+      "startDate": "2024-01-15",
+      "endDate": "2025-01-15"
+    }
+  }'
+```
+
+```javascript Node.js
+const response = await fetch('https://api.payglocal.in/gl/v1/payments/initiate', {
+  method: 'POST',
+  headers: {
+    'Authorization': 'Bearer YOUR_API_KEY',
+    'Content-Type': 'application/json',
+  },
+  body: JSON.stringify({
+    merchantId: 'MERCH_001',
+    merchantTxnId: 'SUB_20240115_001',
+    merchantUniqueId: 'sub-signup-abc123',
+    paymentData: {
+      totalAmount: '999.00',
+      txnCurrency: 'INR',
+      billingData: {
+        firstName: 'Rahul',
+        lastName: 'Verma',
+        emailId: 'rahul.verma@example.com',
+        phoneNumber: '9876543210',
+        addressStreet1: '12 Park Street',
+        city: 'Bengaluru',
+        state: 'KA',
+        country: 'IN',
+        postalCode: '560001',
+      },
+    },
+    pgData: {
+      returnUrl: 'https://yourapp.com/subscriptions/SUB_20240115_001/return',
+    },
+    mandateData: {
+      mandateType: 'RECURRING',
+      frequency: 'MONTHLY',
+      maxAmount: '999.00',
+      startDate: '2024-01-15',
+      endDate: '2025-01-15',
+    },
+  }),
+});
+
+const data = await response.json();
+// Redirect customer to data.redirectUrl
+```
+</CodeGroup>
+
+Once the customer completes checkout and the payment is confirmed, the payment status response includes a `mandateToken`:
+
+```json
+{
+  "ygTransactionId": "YG_TXN_20240115_SUB001",
+  "merchantTxnId": "SUB_20240115_001",
+  "status": "SUCCESS",
+  "mandateToken": "MTKN_RAHUL_MONTHLY_XYZ",
+  "mandateStatus": "ACTIVE"
+}
+```
+
+Store the `mandateToken` securely in your database, associated with the customer's subscription record.
+
+## Step 2: Charge subsequent payments using the mandate token
+
+For each billing cycle, send a `POST` request to `/gl/v1/payments/initiate` using the stored `mandateToken` instead of billing details. The customer is not redirected — the charge is processed silently in the background.
+
+<CodeGroup>
+```bash curl
+curl -X POST https://api.payglocal.in/gl/v1/payments/initiate \
+  -H "Authorization: Bearer YOUR_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "merchantId": "MERCH_001",
+    "merchantTxnId": "SUB_20240215_001",
+    "merchantUniqueId": "sub-cycle-feb-abc123",
+    "paymentData": {
+      "totalAmount": "999.00",
+      "txnCurrency": "INR"
+    },
+    "mandateData": {
+      "mandateToken": "MTKN_RAHUL_MONTHLY_XYZ"
+    }
+  }'
+```
+
+```javascript Node.js
+async function chargeRecurring(mandateToken, merchantTxnId) {
+  const response = await fetch('https://api.payglocal.in/gl/v1/payments/initiate', {
+    method: 'POST',
+    headers: {
+      'Authorization': 'Bearer YOUR_API_KEY',
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      merchantId: 'MERCH_001',
+      merchantTxnId,
+      merchantUniqueId: `sub-cycle-${Date.now()}`,
+      paymentData: {
+        totalAmount: '999.00',
+        txnCurrency: 'INR',
+      },
+      mandateData: {
+        mandateToken,
+      },
+    }),
+  });
+
+  return response.json();
+}
+```
+</CodeGroup>
+
+<Warning>
+  Recurring charges are executed immediately without customer confirmation. Ensure your billing logic sends charges only on the agreed schedule and amount. Overcharging may trigger disputes and mandate cancellation.
+</Warning>
+
+## Mandate statuses
+
+| Status | Meaning |
+|---|---|
+| `ACTIVE` | Mandate is valid and can be used to charge the customer |
+| `PAUSED` | Mandate is temporarily suspended — charges will fail |
+| `CANCELLED` | Mandate has been revoked — no further charges are possible |
+| `EXPIRED` | Mandate has passed its `endDate` |
+
+## Cancelling a mandate
+
+You should cancel a mandate when a customer cancels their subscription. Use `POST /gl/v1/payments/{ygTransactionId}/cancel`, where `ygTransactionId` is from the original mandate-creation payment.
+
+```bash curl
+curl -X POST https://api.payglocal.in/gl/v1/payments/YG_TXN_20240115_SUB001/cancel \
+  -H "Authorization: Bearer YOUR_API_KEY"
+```
+
+After cancellation, the `mandateToken` can no longer be used to initiate charges. Attempting to do so will return an error.
+
+<Tip>
+  Send customers a notification before each recurring charge — this reduces disputes and involuntary churn. Indian regulations (RBI guidelines) also require pre-debit notifications for mandates above certain thresholds.
+</Tip>

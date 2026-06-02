@@ -1,0 +1,119 @@
+---
+title: "GET /gl/v1/refunds/{refundId}"
+description: "GET /gl/v1/refunds/{refundId} — retrieve the current status, amount, and processing timestamp for a refund using its PayGlocal refund ID."
+---
+
+Use this endpoint to check the current state of a refund. Refunds are processed asynchronously — after you create a refund, the initial status is `PENDING`. Poll this endpoint or listen for `REFUND_PROCESSED` and `REFUND_FAILED` webhook events to determine when the refund has been settled.
+
+<Tip>
+Prefer webhooks over polling for production systems. Subscribe to the `REFUND_PROCESSED` and `REFUND_FAILED` events on your dashboard to receive real-time status updates without making repeated API calls.
+</Tip>
+
+## Endpoint
+
+```
+GET /gl/v1/refunds/{refundId}
+```
+
+## Path parameters
+
+<ParamField path="refundId" type="string" required>
+  The PayGlocal refund ID returned in the `refundId` field of the [create refund](/api-reference/refunds/create) response. Example: `YG_REF_20240116_ABC123`.
+</ParamField>
+
+## Response fields
+
+<ResponseField name="refundId" type="string" required>
+  PayGlocal's unique identifier for the refund.
+</ResponseField>
+
+<ResponseField name="ygTransactionId" type="string" required>
+  The PayGlocal transaction ID of the original payment that was refunded.
+</ResponseField>
+
+<ResponseField name="merchantRefundId" type="string" required>
+  Your refund ID as provided when the refund was created.
+</ResponseField>
+
+<ResponseField name="refundAmount" type="string" required>
+  The refund amount as a string with two decimal places (e.g., `"750.00"`).
+</ResponseField>
+
+<ResponseField name="refundCurrency" type="string" required>
+  ISO 4217 currency code for the refund (e.g., `"INR"`, `"USD"`).
+</ResponseField>
+
+<ResponseField name="status" type="string" required>
+  Current status of the refund. Possible values:
+
+  | Value       | Description                                          |
+  | ----------- | ---------------------------------------------------- |
+  | `PENDING`   | Refund is queued and has not yet been processed.     |
+  | `PROCESSED` | Refund successfully sent to the customer's account.  |
+  | `FAILED`    | Refund processing failed; contact PayGlocal support. |
+</ResponseField>
+
+<ResponseField name="processedAt" type="string">
+  ISO 8601 timestamp indicating when the refund was processed and funds were returned to the customer (e.g., `"2024-01-16T11:45:00Z"`). This field is only present when `status` is `PROCESSED`.
+</ResponseField>
+
+## Code examples
+
+<CodeGroup>
+
+```bash curl
+curl --request GET \
+  --url https://api.sandbox.payglocal.in/gl/v1/refunds/YG_REF_20240116_ABC123 \
+  --header "Authorization: Bearer YOUR_SANDBOX_API_KEY"
+```
+
+```javascript Node.js
+const refundId = "YG_REF_20240116_ABC123";
+
+const response = await fetch(
+  `https://api.sandbox.payglocal.in/gl/v1/refunds/${refundId}`,
+  {
+    method: "GET",
+    headers: {
+      Authorization: "Bearer YOUR_SANDBOX_API_KEY",
+    },
+  }
+);
+
+const data = await response.json();
+console.log(data.status);      // e.g. "PROCESSED"
+console.log(data.processedAt); // e.g. "2024-01-16T11:45:00Z"
+```
+
+```python Python
+import requests
+
+refund_id = "YG_REF_20240116_ABC123"
+
+response = requests.get(
+    f"https://api.sandbox.payglocal.in/gl/v1/refunds/{refund_id}",
+    headers={
+        "Authorization": "Bearer YOUR_SANDBOX_API_KEY",
+    },
+)
+
+data = response.json()
+print(data["status"])       # e.g. "PROCESSED"
+print(data.get("processedAt"))  # e.g. "2024-01-16T11:45:00Z"
+```
+
+</CodeGroup>
+
+## Example response
+
+```json
+{
+  "refundId": "YG_REF_20240116_ABC123",
+  "ygTransactionId": "YG_TXN_20240115_XYZ789",
+  "merchantRefundId": "REF_20240116_001",
+  "refundAmount": "750.00",
+  "refundCurrency": "INR",
+  "status": "PROCESSED",
+  "processedAt": "2024-01-16T11:45:00Z"
+}
+```

@@ -1,0 +1,132 @@
+---
+title: "GET /gl/v1/payments/{ygTransactionId}/status"
+description: "GET /gl/v1/payments/{ygTransactionId}/status — retrieve the current status, amount, and payment method for any PayGlocal transaction by its ID."
+---
+
+Use this endpoint to check the current status of a payment at any point in its lifecycle. You will typically call this endpoint after the customer is redirected back to your `returnUrl`, or from a background process to reconcile orders. The response includes the payment method used, the amount, and timestamps.
+
+<Tip>
+PayGlocal also sends webhook events when a payment status changes. Rely on webhooks for real-time updates in production and use this endpoint for on-demand status checks or to handle cases where a webhook delivery was missed.
+</Tip>
+
+## Endpoint
+
+```
+GET /gl/v1/payments/{ygTransactionId}/status
+```
+
+## Path parameters
+
+<ParamField path="ygTransactionId" type="string" required>
+  The PayGlocal transaction ID returned in the `ygTransactionId` field of the [initiate payment](/api-reference/payments/initiate) response. Example: `YG_TXN_20240115_XYZ789`.
+</ParamField>
+
+## Response fields
+
+<ResponseField name="ygTransactionId" type="string" required>
+  PayGlocal's unique identifier for the transaction.
+</ResponseField>
+
+<ResponseField name="merchantTxnId" type="string" required>
+  Your transaction ID as provided in the initiate request.
+</ResponseField>
+
+<ResponseField name="status" type="string" required>
+  Current lifecycle status of the payment. Possible values:
+
+  | Value       | Description                                                      |
+  | ----------- | ---------------------------------------------------------------- |
+  | `INITIATED` | Payment session created; customer has not yet reached checkout.  |
+  | `PENDING`   | Customer is on the checkout page; payment is being processed.    |
+  | `SUCCESS`   | Payment completed successfully.                                  |
+  | `FAILED`    | Payment attempt failed (e.g., card declined, bank error).        |
+  | `CANCELLED` | Payment was cancelled before completion.                         |
+</ResponseField>
+
+<ResponseField name="paymentData" type="object">
+  Details about the payment amount and method.
+
+  <Expandable title="paymentData properties">
+    <ResponseField name="paymentData.totalAmount" type="string">
+      The transaction amount as a string with two decimal places (e.g., `"1500.00"`).
+    </ResponseField>
+
+    <ResponseField name="paymentData.txnCurrency" type="string">
+      ISO 4217 currency code for the transaction (e.g., `"INR"`, `"USD"`).
+    </ResponseField>
+
+    <ResponseField name="paymentData.paymentMethod" type="string">
+      The payment method the customer used to complete the transaction. Possible values: `CARD`, `UPI`, `NETBANKING`, `WALLET`. This field is present only when the payment has reached `PENDING` or a terminal status.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="createdAt" type="string" required>
+  ISO 8601 timestamp indicating when the payment session was created (e.g., `"2024-01-15T10:28:00Z"`).
+</ResponseField>
+
+<ResponseField name="updatedAt" type="string" required>
+  ISO 8601 timestamp indicating when the payment was last updated (e.g., `"2024-01-15T10:30:00Z"`).
+</ResponseField>
+
+## Code examples
+
+<CodeGroup>
+
+```bash curl
+curl --request GET \
+  --url https://api.sandbox.payglocal.in/gl/v1/payments/YG_TXN_20240115_XYZ789/status \
+  --header "Authorization: Bearer YOUR_SANDBOX_API_KEY"
+```
+
+```javascript Node.js
+const ygTransactionId = "YG_TXN_20240115_XYZ789";
+
+const response = await fetch(
+  `https://api.sandbox.payglocal.in/gl/v1/payments/${ygTransactionId}/status`,
+  {
+    method: "GET",
+    headers: {
+      Authorization: "Bearer YOUR_SANDBOX_API_KEY",
+    },
+  }
+);
+
+const data = await response.json();
+console.log(data.status); // e.g. "SUCCESS"
+```
+
+```python Python
+import requests
+
+yg_transaction_id = "YG_TXN_20240115_XYZ789"
+
+response = requests.get(
+    f"https://api.sandbox.payglocal.in/gl/v1/payments/{yg_transaction_id}/status",
+    headers={
+        "Authorization": "Bearer YOUR_SANDBOX_API_KEY",
+    },
+)
+
+data = response.json()
+print(data["status"])  # e.g. "SUCCESS"
+```
+
+</CodeGroup>
+
+## Example response
+
+```json
+{
+  "ygTransactionId": "YG_TXN_20240115_XYZ789",
+  "merchantTxnId": "ORD_20240115_001",
+  "status": "SUCCESS",
+  "paymentData": {
+    "totalAmount": "1500.00",
+    "txnCurrency": "INR",
+    "paymentMethod": "CARD"
+  },
+  "createdAt": "2024-01-15T10:28:00Z",
+  "updatedAt": "2024-01-15T10:30:00Z"
+}
+```
